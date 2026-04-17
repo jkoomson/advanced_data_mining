@@ -1,4 +1,4 @@
-# 🔥 Wildfire Regime Analysis & Clustering
+# Wildfire Regime Analysis & Clustering
 **Montesinho Natural Park (Portugal)**
 
 ## 📌 Project Overview
