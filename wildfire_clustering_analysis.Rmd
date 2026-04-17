@@ -2,7 +2,6 @@
 title: "Uncovering Hidden Fire Patterns: An Advanced Clustering Analysis of Wildfire Data"
 subtitle: "Seven Machine Learning Algorithms Applied to the UCI Forest Fires Dataset"
 author: "John Koomson"
-date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
   html_document:
     toc: true
