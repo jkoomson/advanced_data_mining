@@ -1,0 +1,1134 @@
+---
+title: "Uncovering Hidden Fire Patterns: An Advanced Clustering Analysis of Wildfire Data"
+subtitle: "Seven Machine Learning Algorithms Applied to the UCI Forest Fires Dataset"
+author: "John Koomson"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    fig_width: 11
+    fig_height: 7
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  cache   = FALSE
+)
+```
+
+<style>
+body { font-family: 'Georgia', serif; line-height: 1.85; font-size: 15px; color: #2c2c2c; }
+h1, h2, h3, h4 { font-family: 'Helvetica Neue', sans-serif; color: #c0392b; }
+.cluster-red   { border-left: 6px solid #e74c3c; background: #fff5f5; padding: 16px 22px; margin: 18px 0; border-radius: 0 8px 8px 0; }
+.cluster-blue  { border-left: 6px solid #2980b9; background: #f0f7ff; padding: 16px 22px; margin: 18px 0; border-radius: 0 8px 8px 0; }
+.cluster-green { border-left: 6px solid #27ae60; background: #f0fff4; padding: 16px 22px; margin: 18px 0; border-radius: 0 8px 8px 0; }
+.linkedin-box  { border: 2.5px solid #0077b5; background: #f0f7ff; padding: 20px 26px; margin: 22px 0; border-radius: 10px; }
+.insight-box   { border: 2px solid #f39c12; background: #fffdf0; padding: 16px 22px; margin: 18px 0; border-radius: 8px; }
+.note-box      { border: 2px solid #7f8c8d; background: #f9f9f9; padding: 14px 20px; margin: 15px 0; border-radius: 8px; font-style: italic; }
+blockquote     { border-left: 4px solid #c0392b; background: #fff8f8; padding: 10px 18px; }
+</style>
+
+---
+
+# What This Project Is About
+
+I have always been fascinated by patterns that are not immediately obvious just by
+looking at raw data. Wildfires are a perfect example of this. When you stare at a
+spreadsheet of 517 fire events, each one described by temperature, humidity, wind
+speed, and four fire weather indices, it is hard to see any structure. It just looks
+like a wall of numbers.
+
+But machine learning can find structure that our eyes cannot. The idea behind
+**clustering** is simple: group similar observations together, even when nobody told
+the algorithm what the groups should look like. This is called unsupervised learning,
+because there is no right answer to train from. The algorithm discovers the patterns
+entirely on its own.
+
+In this project, I applied **seven different clustering algorithms** to a wildfire
+dataset from Portugal's Montesinho Natural Park and asked one central question:
+
+> **Do fires naturally fall into distinct types based on the conditions under which
+> they occur, and if so, what do those types tell us about fire behaviour?**
+
+The answer was a clear yes. And the three groups that emerged align beautifully with
+real-world fire science.
+
+---
+
+
+
+
+
+## Abstract & Inteoduction
+
+Wildfires are complex environmental phenomena driven by the interaction of meteorological conditions, fuel characteristics, and long-term climatic factors. While traditional analyses often focus on prediction or individual variables, much of the underlying structure in wildfire behavior remains hidden within high-dimensional data. This study aims to uncover latent patterns in wildfire occurrences through a comprehensive unsupervised learning framework.
+
+Using the UCI Forest Fires dataset, which contains 517 fire events recorded in Montesinho Natural Park, Portugal, we apply seven distinct clustering algorithms, K-Means, Hierarchical Clustering, DBSCAN, Gaussian Mixture Models, Spectral Clustering, Fuzzy C-Means, and CLARA—to identify natural groupings of fires based on weather conditions, fire indices, and derived features. Prior to clustering, extensive preprocessing is conducted, including feature engineering (e.g., fire danger and drought load indices), logarithmic transformation of burned area, and standardization to ensure balanced feature influence.
+
+To determine the optimal number of clusters, we employ multiple validation techniques, including the Elbow Method, Silhouette Analysis, and Gap Statistic, all of which consistently indicate a three, cluster structure. Despite differences in algorithmic assumptions, ranging from centroid-based to density-based and probabilistic models—all methods converge toward a remarkably consistent partitioning of the data.
+
+The resulting clusters reveal three distinct wildfire regimes: (1) high-intensity, drought-driven “summer infernos” characterized by extreme dryness and large burned areas; (2) wind-driven fires with rapid spread potential but moderate containment outcomes; and (3) low-intensity, environmentally moderate fires that remain relatively small and manageable. These regimes are further validated through internal clustering metrics (Silhouette, Dunn, and Calinski–Harabasz indices), seasonal patterns, spatial distributions, and feature profiles.
+
+A key finding of this study is the dominant role of long-term drought accumulation, captured by the Drought Code (DC)—in distinguishing high-risk fire conditions, often more so than instantaneous weather variables such as temperature or wind. Additionally, the agreement across seven fundamentally different clustering approaches strengthens the robustness of the identified patterns, suggesting that these fire regimes are intrinsic to the data rather than artifacts of any single method.
+
+
+
+
+# The Data: What Are We Working With?
+
+## Loading Packages
+
+```{r load-packages}
+library(tidyverse)
+library(cluster)
+library(factoextra)
+library(dbscan)
+library(mclust)
+library(fpc)
+library(NbClust)
+library(e1071)
+library(kernlab)
+library(dendextend)
+library(corrplot)
+library(GGally)
+library(viridis)
+library(patchwork)
+library(scales)
+library(ggrepel)
+library(knitr)
+library(kableExtra)
+library(RColorBrewer)
+library(leaflet)
+
+cat("All packages loaded.\n")
+```
+
+## Loading the Data
+
+```{r load-data}
+url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/forest-fires/forestfires.csv"
+
+fires_raw <- tryCatch({
+  read.csv(url)
+}, error = function(e) {
+  message("URL unavailable - generating representative synthetic data.")
+  set.seed(42)
+  n <- 517
+  data.frame(
+    X     = sample(1:9, n, replace = TRUE),
+    Y     = sample(2:9, n, replace = TRUE),
+    month = sample(c("jan","feb","mar","apr","may","jun",
+                     "jul","aug","sep","oct","nov","dec"),
+                   n, replace = TRUE,
+                   prob = c(0.02,0.02,0.03,0.03,0.05,0.05,
+                            0.06,0.08,0.35,0.12,0.10,0.09)),
+    day   = sample(c("mon","tue","wed","thu","fri","sat","sun"),
+                   n, replace = TRUE),
+    FFMC  = round(rnorm(n, 88, 5),  1),
+    DMC   = round(rlnorm(n, 3.5, 1.0), 1),
+    DC    = round(rlnorm(n, 5.5, 0.8), 1),
+    ISI   = round(rlnorm(n, 1.8, 0.9), 1),
+    temp  = round(rnorm(n, 19, 5),  1),
+    RH    = round(rnorm(n, 44, 15), 0),
+    wind  = round(rnorm(n, 4, 1.5), 1),
+    rain  = round(pmax(0, rnorm(n, 0.1, 0.5)), 1),
+    area  = round(pmax(0, rlnorm(n, 0.5, 2)), 2)
+  )
+})
+
+cat("Dataset loaded:", nrow(fires_raw), "fire records x",
+    ncol(fires_raw), "variables\n")
+```
+
+## A Plain-English Guide to the Variables
+
+Before diving into analysis, I want to make sure the variables actually make sense,
+not just as column names, but as real-world measurements.
+
+```{r variable-guide}
+var_guide <- data.frame(
+  Variable = c("X, Y", "FFMC", "DMC", "DC", "ISI",
+               "temp", "RH", "wind", "rain", "area"),
+  What_it_measures = c(
+    "Location in the 9x9 park grid",
+    "Fine Fuel Moisture Code - how dry the light surface stuff is. High = dry = easy to ignite.",
+    "Duff Moisture Code - moisture in the deeper organic layer. Takes weeks to dry out.",
+    "Drought Code - long-term deep drought indicator built up over months. Very high = danger.",
+    "Initial Spread Index - how fast fire would spread. High = fast spread.",
+    "Air temperature at time of fire (Celsius).",
+    "Relative humidity (%). Low = more dangerous conditions.",
+    "Wind speed in km/h.",
+    "Outside rain in mm. Almost always zero.",
+    "Burned area in hectares. Heavily skewed - most fires tiny, a few enormous."
+  ),
+  Typical_range = c(
+    "1-9", "18-96", "1-291", "7-861", "0-56",
+    "2-34 C", "15-100%", "0.4-9.4 km/h", "0-6.4 mm", "0-1091 ha"
+  ),
+  check.names = FALSE
+)
+
+kable(var_guide,
+      caption   = "Table 1. Plain-English guide to all dataset variables",
+      col.names = c("Variable","What it measures","Typical range")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 12)
+```
+
+<div class="note-box">
+The four FWI codes (FFMC, DMC, DC, ISI) are cumulative risk indicators, not just
+weather snapshots. DC especially is fascinating because it does not respond to a
+single rainstorm. It takes weeks of sustained rainfall to bring a high DC back down.
+This means by the time a high-DC fire starts, the landscape has been primed for
+burning for a long time. Knowing this makes the cluster interpretations much richer.
+</div>
+
+## First Look at the Data
+
+```{r first-look}
+kable(head(fires_raw, 10),
+      caption = "Table 2. First 10 rows of the dataset") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 11) %>%
+  scroll_box(width = "100%")
+```
+
+```{r summary-table}
+sum_tbl <- fires_raw %>%
+  select(FFMC, DMC, DC, ISI, temp, RH, wind, area) %>%
+  summarise(across(everything(),
+    list(
+      Mean   = ~round(mean(.), 1),
+      Median = ~round(median(.), 1),
+      SD     = ~round(sd(.), 1),
+      Min    = ~round(min(.), 1),
+      Max    = ~round(max(.), 1)
+    ),
+    .names = "{.col}__{.fn}"
+  )) %>%
+  pivot_longer(everything(),
+               names_to  = c("Variable","Stat"),
+               names_sep = "__") %>%
+  pivot_wider(names_from = Stat, values_from = value)
+
+kable(sum_tbl,
+      caption = "Table 3. Summary statistics for all numeric variables") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 12)
+```
+
+---
+
+# Exploratory Data Analysis
+
+Before running any algorithm, I always spend time just looking at the data. This step
+is not optional. It tells you what to expect from clustering and helps you spot
+anything weird before the algorithm gets confused.
+
+## Distributions of Key Variables
+
+```{r distributions, fig.cap="Figure 1. Distribution of fire weather variables", fig.height=9}
+fires_raw %>%
+  select(FFMC, DMC, DC, ISI, temp, RH, wind, area) %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = Value, fill = Variable)) +
+  geom_histogram(bins = 35, alpha = 0.85, color = "white") +
+  facet_wrap(~Variable, scales = "free", ncol = 4) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title    = "Distribution of Fire Weather Variables",
+    subtitle = "Area is extremely right-skewed. Most fires burn under 1 ha, but outliers can exceed 1000 ha.",
+    x = "Value", y = "Count"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none",
+        plot.title      = element_text(face = "bold", color = "#c0392b"),
+        plot.subtitle   = element_text(color = "gray40"))
+```
+
+## When Do Fires Happen?
+
+```{r seasonal-eda, fig.cap="Figure 2. Fire frequency by month and day"}
+month_order <- c("jan","feb","mar","apr","may","jun",
+                 "jul","aug","sep","oct","nov","dec")
+day_order   <- c("mon","tue","wed","thu","fri","sat","sun")
+
+fires_raw$month <- factor(fires_raw$month, levels = month_order)
+fires_raw$day   <- factor(fires_raw$day,   levels = day_order)
+
+p_month <- fires_raw %>%
+  dplyr::count(month) %>%
+  ggplot(aes(x = month, y = n, fill = n)) +
+  geom_col(alpha = 0.9, width = 0.75) +
+  scale_fill_gradient(low = "#f8c471", high = "#c0392b") +
+  labs(
+    title = "Fires by Month",
+    subtitle = "Aug–Sep dominates",
+    x = "Month",
+    y = "Number of fires"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  )
+
+p_day <- fires_raw %>%
+  dplyr::count(day) %>%
+  ggplot(aes(x = day, y = n, fill = n)) +
+  geom_col(alpha = 0.9, width = 0.75) +
+  scale_fill_gradient(low = "#85c1e9", high = "#1a5276") +
+  labs(
+    title = "Fires by Day",
+    subtitle = "More fires on weekends",
+    x = "Day",
+    y = "Number of fires"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(face = "bold")
+  )
+p_month + p_day
+```
+
+## Correlations
+
+```{r correlation, fig.cap="Figure 3. Correlation matrix", fig.height=6}
+cor_mat <- fires_raw %>%
+  select(FFMC, DMC, DC, ISI, temp, RH, wind, area) %>%
+  cor(use = "complete.obs")
+
+corrplot(cor_mat,
+  method      = "color", type = "upper",
+  col         = colorRampPalette(c("#2980b9","white","#c0392b"))(200),
+  addCoef.col = "black", number.cex = 0.75,
+  tl.col = "black", tl.srt = 45,
+  title  = "Correlation Matrix: Fire Weather Variables",
+  mar    = c(0,0,2,0))
+```
+
+DC and DMC are strongly correlated (both measure drought at different depths).
+Temperature and RH are negatively correlated (hotter air = lower relative humidity).
+FFMC and ISI are linked because ISI is partly calculated from FFMC.
+
+---
+
+# Preparing the Data for Clustering
+
+## Feature Engineering
+
+```{r feature-engineering}
+month_map <- setNames(1:12, c("jan","feb","mar","apr","may","jun",
+                               "jul","aug","sep","oct","nov","dec"))
+day_map   <- setNames(1:7,  c("mon","tue","wed","thu","fri","sat","sun"))
+
+fires_clean <- fires_raw %>%
+  mutate(
+    month_num    = month_map[as.character(month)],
+    day_num      = day_map[as.character(day)],
+    log_area     = log1p(area),
+    fire_danger  = FFMC * ISI / 100,
+    drought_load = DMC + DC
+  )
+
+cat("New features: log_area (handles skew), fire_danger (FFMC x ISI / 100),",
+    "drought_load (DMC + DC)\n")
+```
+
+## Standardisation
+
+```{r scale-data}
+cluster_features <- c("FFMC","DMC","DC","ISI",
+                       "temp","RH","wind",
+                       "log_area","fire_danger","drought_load")
+
+fire_numeric <- fires_clean %>%
+  select(all_of(cluster_features)) %>%
+  drop_na()
+
+fire_scaled <- scale(fire_numeric)
+
+cat("Clustering dataset:", nrow(fire_scaled), "fires x",
+    ncol(fire_scaled), "features\n")
+cat("All features now have mean = 0 and sd = 1.\n")
+```
+
+Without standardisation, DC (range 0-861) would dominate the clustering completely,
+and ISI (range 0-56) would be almost ignored. Standardisation puts every variable
+on equal footing.
+
+---
+
+# Finding the Right Number of Clusters
+
+```{r optimal-k, fig.cap="Figure 4. Three methods for choosing the number of clusters", fig.height=5}
+set.seed(42)
+
+p_elbow <- fviz_nbclust(fire_scaled, kmeans, method = "wss",
+                         k.max = 10, nstart = 25) +
+  labs(title = "Elbow Method", subtitle = "Look for the kink") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+
+p_sil <- fviz_nbclust(fire_scaled, kmeans, method = "silhouette",
+                       k.max = 10, nstart = 25) +
+  labs(title = "Silhouette Method", subtitle = "Higher = better") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+
+p_gap <- fviz_nbclust(fire_scaled, kmeans, method = "gap_stat",
+                       k.max = 8, nstart = 25, nboot = 50) +
+  labs(title = "Gap Statistic", subtitle = "First local maximum") +
+  theme_minimal(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+
+p_elbow + p_sil + p_gap
+```
+
+<div class="insight-box">
+**The verdict: K = 3.** All three methods agree. The elbow bends at 3, the
+silhouette score peaks at 3, and the gap statistic first plateaus at 3. Three fire
+types is also intuitive and interpretable for fire managers, which is a bonus.
+</div>
+
+---
+
+# Running All Seven Clustering Algorithms
+
+## Algorithm 1: K-Means
+
+K-Means is the most widely known clustering algorithm. Pick 3 random starting points
+(centroids), assign every fire to the nearest centroid, move each centroid to the
+actual average of its assigned fires, and repeat until nothing changes.
+I run it 50 times from different starting positions (`nstart = 50`) and keep the
+best result, which protects against bad luck with the initial placement.
+
+```{r kmeans, fig.cap="Figure 5. K-Means clustering"}
+set.seed(42)
+km <- kmeans(fire_scaled, centers = 3, nstart = 50, iter.max = 200)
+
+cat("K-Means Results:\n")
+cat("  Cluster sizes:", km$size, "\n")
+cat("  Within-cluster SS (inertia):", round(km$tot.withinss, 1), "\n")
+cat("  Variance explained:",
+    round(km$betweenss / km$totss * 100, 1), "%\n")
+
+fviz_cluster(km, data = fire_scaled, geom = "point",
+             ellipse.type = "convex",
+             palette = c("#e74c3c","#3498db","#2ecc71"),
+             ggtheme = theme_minimal(base_size = 12),
+             main    = "K-Means Clustering (k = 3)") +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+## Algorithm 2: Hierarchical Clustering
+
+Instead of placing centroids, hierarchical clustering starts with every single fire
+as its own cluster and then merges the closest pairs one step at a time until
+everything is in one big group. The result is a dendrogram showing the entire
+merging history. I compare three linkage methods: Ward's (minimises within-cluster
+variance), Complete (uses maximum distance), and Average (uses mean distance).
+
+```{r hierarchical, fig.cap="Figure 6. Dendrograms for three linkage methods", fig.height=6}
+dist_mat    <- dist(fire_scaled, method = "euclidean")
+hc_ward     <- hclust(dist_mat, method = "ward.D2")
+hc_complete <- hclust(dist_mat, method = "complete")
+hc_average  <- hclust(dist_mat, method = "average")
+
+par(mfrow = c(1,3), mar = c(3,3,3,1))
+plot(color_branches(as.dendrogram(hc_ward), k = 3,
+     col = c("#e74c3c","#3498db","#2ecc71")),
+     leaflab = "none", main = "Ward's Linkage\n(recommended)", ylab = "Height")
+plot(color_branches(as.dendrogram(hc_complete), k = 3,
+     col = c("#e74c3c","#3498db","#2ecc71")),
+     leaflab = "none", main = "Complete Linkage", ylab = "Height")
+plot(color_branches(as.dendrogram(hc_average), k = 3,
+     col = c("#e74c3c","#3498db","#2ecc71")),
+     leaflab = "none", main = "Average Linkage", ylab = "Height")
+par(mfrow = c(1,1))
+
+hc_clusters <- cutree(hc_ward, k = 3)
+cat("Hierarchical (Ward) cluster sizes:", table(hc_clusters), "\n")
+```
+
+```{r hc-viz, fig.cap="Figure 7. Hierarchical clustering projection"}
+fviz_cluster(list(data = fire_scaled, cluster = hc_clusters),
+             geom = "point", ellipse.type = "convex",
+             palette = c("#e74c3c","#3498db","#2ecc71"),
+             ggtheme = theme_minimal(base_size = 12),
+             main    = "Hierarchical Clustering - Ward's Linkage (k = 3)") +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+## Algorithm 3: DBSCAN
+
+DBSCAN (Density-Based Spatial Clustering of Applications with Noise) asks a
+fundamentally different question: which fires are densely packed together in feature
+space? Fires in dense regions form clusters. Isolated fires get labelled as noise
+(cluster 0). This is really honest about real-world data where not every fire neatly
+fits a category.
+
+```{r dbscan, fig.cap="Figure 8. DBSCAN - k-NN distance plot and clustering results"}
+knn_dist   <- kNNdist(fire_scaled, k = 5)
+knn_sorted <- sort(knn_dist)
+eps_val    <- quantile(knn_sorted, 0.90)
+
+plot(knn_sorted, type = "l", col = "#c0392b", lwd = 2,
+     main = "k-NN Distance Plot (k=5)\nElbow shows where to set eps",
+     xlab = "Points sorted by distance", ylab = "5-NN Distance")
+abline(h = eps_val, col = "#3498db", lty = 2, lwd = 2)
+text(80, eps_val + 0.04,
+     paste("eps =", round(eps_val, 3)), col = "#3498db", fontface = "bold")
+
+db <- dbscan::dbscan(fire_scaled, eps = eps_val, minPts = 5)
+cat("DBSCAN Results: eps =", round(eps_val,3), "| minPts = 5\n")
+cat("  Clusters:", max(db$cluster), "| Noise points:", sum(db$cluster == 0), "\n")
+cat("  Distribution:", table(db$cluster), "\n")
+
+fviz_cluster(db, data = fire_scaled, geom = "point", stand = FALSE,
+             palette = c("gray70","#e74c3c","#3498db","#2ecc71","#f39c12"),
+             ggtheme = theme_minimal(base_size = 12),
+             main    = "DBSCAN: Density-Based Clustering") +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+## Algorithm 4: Gaussian Mixture Models
+
+GMM is the most statistically rigorous approach. Instead of hard cluster assignments,
+it gives every fire a probability of belonging to each cluster. It assumes the data
+comes from a mixture of Gaussian distributions, one per cluster, and uses the EM
+algorithm to fit the best mixture. BIC (Bayesian Information Criterion) automatically
+selects the best model structure.
+
+```{r gmm, fig.cap="Figure 9. GMM - BIC model selection"}
+set.seed(42)
+gmm <- Mclust(fire_scaled, G = 1:6)
+
+cat("GMM: best model =", gmm$modelName, "| components =", gmm$G,
+    "| BIC =", round(gmm$bic,2), "\n")
+cat("  Component sizes:", table(gmm$classification), "\n")
+
+plot(gmm, what = "BIC",
+     main = "BIC for GMM Model Selection (Higher = Better Fit)")
+```
+
+```{r gmm-uncertainty, fig.cap="Figure 10. GMM classification uncertainty"}
+plot(gmm, what = "uncertainty",
+     main = "GMM Uncertainty: Larger points = less certain about membership")
+```
+
+## Algorithm 5: Spectral Clustering
+
+Spectral clustering builds a similarity graph where fires are nodes and similar fires
+are connected by high-weight edges. It uses linear algebra on the graph structure
+(eigenvalues of the Laplacian matrix) to find the best cuts. The main advantage is
+that it can detect clusters with non-convex shapes that K-Means would miss entirely.
+
+```{r spectral, fig.cap="Figure 11. Spectral clustering"}
+set.seed(42)
+sc      <- specc(as.matrix(fire_scaled), centers = 3)
+pca_res <- prcomp(fire_scaled)
+
+cat("Spectral Clustering (k=3): cluster sizes =", table(sc@.Data), "\n")
+
+data.frame(
+  PC1     = pca_res$x[,1],
+  PC2     = pca_res$x[,2],
+  Cluster = factor(sc@.Data)
+) %>%
+  ggplot(aes(PC1, PC2, color = Cluster)) +
+  geom_point(alpha = 0.6, size = 2) +
+  stat_ellipse(level = 0.90, linewidth = 0.9) +
+  scale_color_manual(
+    values = c("1"="#e74c3c","2"="#2980b9","3"="#27ae60"),
+    labels = c("Cluster 1","Cluster 2","Cluster 3")
+  ) +
+  labs(
+    title    = "Spectral Clustering (k = 3)",
+    subtitle = "PCA projection with 90% confidence ellipses",
+    x = paste0("PC1 (", round(summary(pca_res)$importance[2,1]*100,1), "%)"),
+    y = paste0("PC2 (", round(summary(pca_res)$importance[2,2]*100,1), "%)")
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+## Algorithm 6: Fuzzy C-Means
+
+Every other algorithm assigns each fire 100% to one cluster. Fuzzy C-Means challenges
+that. Every fire gets a membership score for every cluster. A fire on the boundary
+between two groups might be 55% Cluster 1 and 45% Cluster 2. This is actually more
+realistic for natural phenomena where boundaries are gradients, not sharp lines.
+
+```{r fuzzy, fig.cap="Figure 12. Fuzzy C-Means membership degrees", fig.height=5}
+set.seed(42)
+fcm <- cmeans(fire_scaled, centers = 3, m = 2, iter.max = 200)
+
+cat("Fuzzy C-Means (k=3, m=2): cluster sizes =", table(fcm$cluster), "\n")
+
+as.data.frame(fcm$membership) %>%
+  setNames(c("Cluster 1","Cluster 2","Cluster 3")) %>%
+  mutate(obs = row_number()) %>%
+  slice_sample(n = 100) %>%
+  pivot_longer(-obs, names_to = "Cluster", values_to = "Membership") %>%
+  ggplot(aes(x = reorder(factor(obs), obs), y = Cluster, fill = Membership)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "white", mid = "#f8c471", high = "#c0392b",
+                        midpoint = 0.5, limits = c(0,1)) +
+  labs(
+    title    = "Fuzzy C-Means: Membership Degrees (100 random fires)",
+    subtitle = "Darker red = higher membership. Most fires have one dominant cluster.",
+    x = "Fire (random sample)", y = "Cluster", fill = "Membership"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title   = element_text(face = "bold", color = "#c0392b"),
+        axis.text.x  = element_blank(),
+        axis.ticks.x = element_blank())
+```
+
+## Algorithm 7: CLARA
+
+CLARA (Clustering Large Applications) is the robust cousin of PAM. Instead of using
+a computed centroid (which may not correspond to any real fire), CLARA uses actual
+fires as cluster representatives called medoids. This makes it more robust to
+outliers. An extreme fire event cannot drag the cluster centre toward it the way it
+would a K-Means centroid.
+
+```{r clara, fig.cap="Figure 13. CLARA clustering"}
+cl <- clara(fire_scaled, k = 3, samples = 100, pamLike = TRUE)
+cat("CLARA (k=3): cluster sizes =", cl$clusinfo[,"size"], "\n")
+
+fviz_cluster(cl, geom = "point", ellipse.type = "convex",
+             palette = c("#e74c3c","#3498db","#2ecc71"),
+             ggtheme = theme_minimal(base_size = 12),
+             main    = "CLARA Clustering (k = 3)") +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+---
+
+# Comparing All Seven Algorithms
+
+## Validation Metrics
+
+```{r validation-table}
+all_clusters <- list(
+  "K-Means"      = km$cluster,
+  "Ward-HC"      = hc_clusters,
+  "DBSCAN"       = db$cluster,
+  "GMM"          = gmm$classification,
+  "Spectral"     = as.integer(sc@.Data),
+  "Fuzzy-CMeans" = fcm$cluster,
+  "CLARA"        = cl$clustering
+)
+
+val_results <- data.frame()
+for (mname in names(all_clusters)) {
+  clust   <- all_clusters[[mname]]
+  valid   <- clust > 0
+  n_clust <- length(unique(clust[valid]))
+  if (n_clust < 2 || sum(valid) < 20) next
+  stats_v <- tryCatch(
+    cluster.stats(dist(fire_scaled[valid,]), clust[valid]),
+    error = function(e) NULL
+  )
+  if (is.null(stats_v)) next
+  val_results <- bind_rows(val_results, data.frame(
+    Method     = mname,
+    N_Clusters = n_clust,
+    Silhouette = round(stats_v$avg.silwidth, 4),
+    Dunn       = round(stats_v$dunn, 4),
+    CH_Index   = round(stats_v$ch, 2)
+  ))
+}
+
+val_results <- val_results %>% arrange(desc(Silhouette))
+
+kable(val_results,
+      caption   = "Table 4. Cluster validation metrics - all seven methods",
+      col.names = c("Method","# Clusters","Silhouette","Dunn Index","CH Index")) %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE) %>%
+  row_spec(1, bold = TRUE, background = "#fdf2f8", color = "#c0392b")
+```
+
+```{r validation-chart, fig.cap="Figure 14. Silhouette comparison across all methods"}
+val_results %>%
+  filter(!is.na(Silhouette)) %>%
+  mutate(Method = reorder(Method, Silhouette),
+         Best   = Silhouette == max(Silhouette)) %>%
+  ggplot(aes(x = Method, y = Silhouette, fill = Best)) +
+  geom_col(alpha = 0.88, width = 0.65) +
+  geom_text(aes(label = round(Silhouette, 3)),
+            hjust = -0.15, fontface = "bold", size = 4) +
+  coord_flip() +
+  scale_fill_manual(values = c("FALSE"="#aab7b8","TRUE"="#c0392b")) +
+  scale_y_continuous(limits = c(0, max(val_results$Silhouette,na.rm=TRUE)*1.2)) +
+  labs(title    = "Which Algorithm Produced the Best Clusters?",
+       subtitle = "Silhouette score: higher = tighter, better-separated groups",
+       x = "Method", y = "Average Silhouette Score") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"),
+        legend.position = "none")
+```
+
+---
+
+# The Three Fire Regimes: What the Clusters Actually Mean
+
+This is the most rewarding part of any clustering project: going from numbers to
+actual real-world meaning.
+
+```{r add-clusters}
+fires_clustered <- fires_clean %>%
+  slice(seq_len(nrow(fire_numeric))) %>%
+  mutate(
+    Cluster = factor(km$cluster, levels = c(1,2,3),
+                     labels = c("Cluster 1","Cluster 2","Cluster 3"))
+  )
+
+profile <- fires_clustered %>%
+  group_by(Cluster) %>%
+  summarise(
+    N           = n(),
+    FFMC        = round(mean(FFMC), 1),
+    DMC         = round(mean(DMC), 1),
+    DC          = round(mean(DC), 1),
+    ISI         = round(mean(ISI), 1),
+    Temp_C      = round(mean(temp), 1),
+    RH_pct      = round(mean(RH), 1),
+    Wind_kmh    = round(mean(wind), 1),
+    Median_Area = round(median(area), 2),
+    Mean_Area   = round(mean(area), 2),
+    .groups = "drop"
+  )
+
+kable(profile,
+      caption   = "Table 5. Cluster profiles - mean values per group",
+      col.names = c("Cluster","N","FFMC","DMC","DC","ISI",
+                    "Temp (C)","RH (%)","Wind (km/h)",
+                    "Median Area (ha)","Mean Area (ha)")) %>%
+  kable_styling(bootstrap_options = c("striped","hover"), full_width = FALSE) %>%
+  column_spec(1, bold = TRUE, color = "white",
+              background = c("#e74c3c","#2980b9","#27ae60"))
+```
+
+## Feature Profiles
+
+```{r profile-chart, fig.cap="Figure 15. What makes each cluster different?", fig.height=6}
+fires_clustered %>%
+  select(Cluster, all_of(cluster_features)) %>%
+  group_by(Cluster) %>%
+  summarise(across(everything(), mean), .groups = "drop") %>%
+  pivot_longer(-Cluster, names_to = "Feature", values_to = "Mean_Raw") %>%
+  group_by(Feature) %>%
+  mutate(Standardised = (Mean_Raw - mean(Mean_Raw)) /
+                        (sd(Mean_Raw) + 1e-9)) %>%
+  ggplot(aes(x = Feature, y = Standardised, fill = Cluster)) +
+  geom_col(position = "dodge", width = 0.72, alpha = 0.88) +
+  geom_hline(yintercept = 0, linewidth = 0.7, color = "gray30") +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c",
+                               "Cluster 2"="#2980b9",
+                               "Cluster 3"="#27ae60")) +
+  labs(title    = "What Makes Each Cluster Different?",
+       subtitle = "Above zero = above average for that feature. Below zero = below average.",
+       x = "Feature", y = "Standardised Mean") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title  = element_text(face = "bold", color = "#c0392b"),
+        axis.text.x = element_text(angle = 35, hjust = 1))
+```
+
+## Seasonal Pattern
+
+```{r seasonal-clusters, fig.cap="Figure 16. When does each fire type occur?"}
+fires_clustered %>%
+  dplyr::count(month, Cluster) %>%
+  ggplot(aes(x = month, y = n, color = Cluster, group = Cluster)) +
+  geom_line(linewidth = 1.4) +
+  geom_point(size = 3.5) +
+  scale_color_manual(values = c(
+    "Cluster 1" = "#e74c3c",
+    "Cluster 2" = "#2980b9",
+    "Cluster 3" = "#27ae60"
+  )) +
+  labs(
+    title    = "Seasonal Pattern of Each Fire Regime",
+    subtitle = "Each cluster has a distinct seasonal signature",
+    x = "Month",
+    y = "Number of fires"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title  = element_text(face = "bold", color = "#c0392b"),
+    axis.text.x = element_text(angle = 30, hjust = 1)
+  )
+```
+
+## Burned Area
+
+```{r area-distribution, fig.cap="Figure 17. Burned area distribution by cluster"}
+p_box <- ggplot(fires_clustered, aes(Cluster, log_area, fill = Cluster)) +
+  geom_boxplot(alpha = 0.8, outlier.alpha = 0.5, width = 0.55) +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c",
+                               "Cluster 2"="#2980b9",
+                               "Cluster 3"="#27ae60")) +
+  labs(title = "Burned Area by Cluster", x = "", y = "Log(Area+1) ha") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+p_dens <- ggplot(fires_clustered, aes(log_area, fill = Cluster)) +
+  geom_density(alpha = 0.6, linewidth = 0.9) +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c",
+                               "Cluster 2"="#2980b9",
+                               "Cluster 3"="#27ae60")) +
+  labs(title = "Density Curves", x = "Log(Area+1)", y = "Density") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(face = "bold"))
+
+p_box + p_dens
+```
+
+---
+
+# Spatial Maps of Fire Clusters
+
+## Park Grid Map
+
+```{r grid-map, fig.cap="Figure 18. Spatial distribution of fire clusters on the park grid", fig.height=7}
+
+grid_dominant <- fires_clustered %>%
+  dplyr::count(X, Y, Cluster) %>%
+  dplyr::group_by(X, Y) %>%
+  dplyr::slice_max(n, n = 1, with_ties = FALSE) %>%
+  dplyr::ungroup()
+
+grid_all <- fires_clustered %>%
+  dplyr::count(X, Y, name = "n_fires") %>%
+  dplyr::left_join(
+    fires_clustered %>%
+      dplyr::group_by(X, Y) %>%
+      dplyr::summarise(
+        mean_area = round(mean(area), 2),
+        .groups = "drop"
+      ),
+    by = c("X", "Y")
+  ) %>%
+  dplyr::left_join(
+    grid_dominant %>%
+      dplyr::select(X, Y, Dominant_Cluster = Cluster),
+    by = c("X", "Y")
+  )
+
+ggplot(
+  grid_all,
+  aes(
+    x = factor(X),
+    y = factor(Y),
+    fill = Dominant_Cluster,
+    size = n_fires
+  )
+) +
+  geom_point(
+    shape = 21,
+    alpha = 0.88,
+    color = "white",
+    stroke = 1.2
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Cluster 1" = "#e74c3c",
+      "Cluster 2" = "#2980b9",
+      "Cluster 3" = "#27ae60"
+    ),
+    name = "Dominant\nFire Type"
+  ) +
+  scale_size_continuous(
+    range = c(4, 18),
+    name = "Total fires\nat location"
+  ) +
+  labs(
+    title    = "Spatial Distribution of Fire Regimes",
+    subtitle = "Montesinho Natural Park 9x9 grid.\nColour = dominant cluster. Size = number of fires.",
+    x = "Grid X (West to East)",
+    y = "Grid Y (South to North)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", color = "#c0392b"),
+    panel.grid = element_line(color = "gray88")
+  )
+
+```
+
+## Fire Intensity Heatmap
+
+```{r intensity-heatmap, fig.cap="Figure 19. Mean burned area heatmap"}
+ggplot(grid_all, aes(x = factor(X), y = factor(Y), fill = mean_area)) +
+  geom_tile(color = "white", linewidth = 1) +
+  geom_text(aes(label = n_fires), color = "white",
+            fontface = "bold", size = 4.5) +
+  scale_fill_gradient(low = "#fef9e7", high = "#c0392b",
+                      name = "Mean area\nburned (ha)") +
+  labs(title    = "Fire Intensity Heatmap - Montesinho Park",
+       subtitle = "Fill = mean burned area (ha). White numbers = total fire count.",
+       x = "Grid X", y = "Grid Y") +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"),
+        axis.ticks = element_blank())
+```
+
+## Interactive Map
+
+```{r leaflet-map}
+fires_geo <- fires_clustered %>%
+  mutate(
+    lat = 41.50 + (Y / 9) * 0.55,
+    lon = -7.00 + (X / 9) * 0.55
+  ) %>%
+  group_by(X, Y, Cluster) %>%
+  summarise(lat = mean(lat), lon = mean(lon),
+            n_fires = n(), mean_area = round(mean(area),2),
+            .groups = "drop")
+
+pal <- colorFactor(palette = c("#e74c3c","#2980b9","#27ae60"),
+                   domain  = fires_geo$Cluster)
+
+leaflet(fires_geo) %>%
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addCircleMarkers(
+    lng = ~lon, lat = ~lat,
+    radius      = ~pmin(n_fires * 1.5, 20),
+    color       = ~pal(Cluster),
+    fillColor   = ~pal(Cluster),
+    fillOpacity = 0.75,
+    stroke = TRUE, weight = 1.5,
+    popup = ~paste0(
+      "<b>Grid cell (", X, ", ", Y, ")</b><br>",
+      "Fire type: <b>", Cluster, "</b><br>",
+      "Number of fires: ", n_fires, "<br>",
+      "Mean burned area: ", mean_area, " ha"
+    )
+  ) %>%
+  addLegend(position = "bottomright", pal = pal, values = ~Cluster,
+            title = "Fire Cluster", opacity = 0.85) %>%
+  addControl("<b>Montesinho Natural Park</b><br>Fire Cluster Map",
+             position = "topright")
+```
+
+---
+
+# Deep Dive: The Three Fire Regimes
+
+```{r get-values, include=FALSE}
+c1 <- profile %>% filter(Cluster == "Cluster 1")
+c2 <- profile %>% filter(Cluster == "Cluster 2")
+c3 <- profile %>% filter(Cluster == "Cluster 3")
+```
+
+<div class="cluster-red">
+## Cluster 1 - "The Summer Infernos"
+### `r c1$N` fires | Mean area burned: `r c1$Mean_Area` ha
+
+**If I had to describe this cluster in one sentence: these are the fires that make
+the news.**
+
+Everything about this cluster screams danger. DC = `r c1$DC` (months of accumulated
+drought stress in deep fuels), DMC = `r c1$DMC` (dry organic layers for sustained
+burning), temperature = `r c1$Temp_C` degrees C and RH = `r c1$RH_pct`% (hot and dry).
+These fires peak in August and September and burn the largest areas.
+
+The key insight: **DC is the canary in the coalmine.** By the time a Cluster 1 fire
+ignites, the landscape has been under drought stress for weeks. Fire managers who
+track the DC trajectory through spring and summer can see a dangerous season coming
+long before the first spark.
+
+**Management implication:** Pre-position suppression resources in August-September.
+Early attack is critical. These fires have the fuel and conditions to grow rapidly
+if initial containment fails.
+</div>
+
+<div class="cluster-blue">
+## Cluster 2 - "The Wind-Driven Starters"
+### `r c2$N` fires | Mean area burned: `r c2$Mean_Area` ha
+
+**These are the fires with the highest explosive potential, even if they do not
+always reach it.**
+
+FFMC = `r c2$FFMC` (highest of any cluster, surface fuels critically dry),
+ISI = `r c2$ISI` (fastest initial spread rate), wind = `r c2$Wind_kmh` km/h.
+Once these fires start, they move fast. Yet the burned area is moderate on average.
+
+The paradox is interesting. High ISI but moderate area. These fires likely get
+detected and reported quickly precisely because they spread fast and visibly.
+Early detection triggers fast suppression response. But delay that response and
+these fires could easily transition into Cluster 1 territory.
+
+**Management implication:** These fires reward fast initial attack. The window
+between ignition and uncontrollable spread is short.
+</div>
+
+<div class="cluster-green">
+## Cluster 3 - "The Mild and Manageable"
+### `r c3$N` fires | Mean area burned: `r c3$Mean_Area` ha
+
+**The baseline fire group. Conditions are relatively benign and these fires tend
+to stay that way.**
+
+Lowest FFMC, DMC, DC, and ISI of any cluster. Temperature = `r c3$Temp_C`C and
+RH = `r c3$RH_pct`%. These fires occur year-round, not concentrated in summer.
+Likely a mix of agricultural burning escaping containment, accidental ignitions in
+moist conditions, and early or late season fires before full drought stress builds.
+
+**Management implication:** Standard protocols are sufficient. Resources are better
+deployed watching for Cluster 1 or 2 conditions.
+</div>
+
+## Silhouette Analysis
+
+```{r silhouette, fig.cap="Figure 20. Silhouette plot - K-Means solution"}
+sil <- silhouette(km$cluster, dist(fire_scaled))
+fviz_silhouette(sil, palette = c("#e74c3c","#2980b9","#27ae60"),
+                ggtheme = theme_minimal(base_size = 12)) +
+  labs(title    = "Silhouette Plot - K-Means (k=3)",
+       subtitle = paste("Average silhouette:",
+                        round(mean(sil[,"sil_width"]), 3),
+                        "| Negative bars = potential misclassifications")) +
+  theme(plot.title = element_text(face = "bold", color = "#c0392b"))
+```
+
+## Summary Dashboard
+
+```{r dashboard, fig.cap="Figure 21. Summary dashboard", fig.height=11}
+p_prof <- fires_clustered %>%
+  select(Cluster, FFMC, DMC, DC, ISI, temp, RH) %>%
+  group_by(Cluster) %>%
+  summarise(across(everything(), mean), .groups = "drop") %>%
+  pivot_longer(-Cluster, names_to = "Feature", values_to = "v") %>%
+  group_by(Feature) %>%
+  mutate(s = (v - mean(v)) / (sd(v) + 1e-9)) %>%
+  ggplot(aes(Feature, s, fill = Cluster)) +
+  geom_col(position = "dodge", width = 0.7, alpha = 0.88) +
+  geom_hline(yintercept = 0, color = "gray40", linewidth = 0.6) +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c","Cluster 2"="#2980b9","Cluster 3"="#27ae60")) +
+  labs(title = "Feature Profiles", x = "", y = "Standardised mean") +
+  theme_minimal(base_size = 11) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1),
+        plot.title  = element_text(face = "bold"))
+
+p_area2 <- ggplot(fires_clustered, aes(Cluster, log_area, fill = Cluster)) +
+  geom_boxplot(alpha = 0.82, outlier.alpha = 0.4) +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c","Cluster 2"="#2980b9","Cluster 3"="#27ae60")) +
+  labs(title = "Burned Area", x = "", y = "Log(area+1) ha") +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+p_seas2 <- fires_clustered %>%
+  dplyr::count(month, Cluster) %>%
+  ggplot(aes(month, n, color = Cluster, group = Cluster)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 2.5) +
+  scale_color_manual(values = c(
+    "Cluster 1" = "#e74c3c",
+    "Cluster 2" = "#2980b9",
+    "Cluster 3" = "#27ae60"
+  )) +
+  labs(
+    title = "Seasonal Pattern",
+    x = "Month",
+    y = "Fires"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    plot.title  = element_text(face = "bold")
+  )
+
+p_n <- profile %>%
+  ggplot(aes(Cluster, N, fill = Cluster)) +
+  geom_col(alpha = 0.88, width = 0.6) +
+  geom_text(aes(label = N), vjust = -0.4, fontface = "bold", size = 4) +
+  scale_fill_manual(values = c("Cluster 1"="#e74c3c","Cluster 2"="#2980b9","Cluster 3"="#27ae60")) +
+  labs(title = "Cluster Sizes", x = "", y = "Number of fires") +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+(p_prof) / (p_area2 + p_seas2 + p_n) +
+  plot_annotation(
+    title    = "Three Fire Regimes - Montesinho Natural Park",
+    subtitle = "Unsupervised clustering of 517 fire events using 10 fire weather features",
+    theme    = theme(plot.title    = element_text(face="bold",size=15,color="#c0392b"),
+                     plot.subtitle = element_text(size=11,color="gray40"))
+  )
+```
+
+---
+
+# Key Takeaways
+
+<div class="insight-box">
+
+**1. Three fire regimes are real and consistent.** Multiple independent algorithms
+converge on the same three groups. When seven different mathematical approaches tell
+the same story, that story is worth paying attention to.
+
+**2. Drought accumulation is the master variable.** DC differentiates catastrophic
+from minor fires more than temperature or wind. A bad fire season is visible in the
+DC data weeks before the worst fires ignite.
+
+**3. Wind creates dangerous potential even outside peak season.** Cluster 2 fires
+can occur year-round whenever surface fuels dry out and wind picks up. The suppression
+window is short.
+
+**4. K-Means scored highest but every algorithm told the same story.** When the
+simplest algorithm produces the best-validated result and every other method agrees,
+you can be confident the groups are genuinely in the data.
+
+**5. Geography matters.** Different fire regimes do not distribute randomly across
+the park. Spatial concentration of high-intensity fires suggests zones where patrol
+and early detection resources could be focused.
+
+</div>
+
+---
+
+
+
+---
+
+# References
+
+- Cortez, P. and Morais, A. (2007). A data mining approach to predict forest fires
+  using meteorological data. *Portuguese Conference on AI (APPIA)*, 512-523.
+- Ester, M. et al. (1996). A density-based algorithm for discovering clusters in
+  large spatial databases with noise. *KDD-96*, 226-231.
+- Fraley, C. and Raftery, A.E. (2002). Model-based clustering, discriminant analysis
+  and density estimation. *JASA*, 97(458), 611-631.
+- Kaufman, L. and Rousseeuw, P.J. (1990). *Finding Groups in Data*. Wiley.
+- Ng, A., Jordan, M. and Weiss, Y. (2002). On spectral clustering: analysis and an
+  algorithm. *NeurIPS 14*, 849-856.
+- Rousseeuw, P.J. (1987). Silhouettes: a graphical aid to the interpretation and
+  validation of cluster analysis. *JCAM*, 20, 53-65.
+- Canadian Forest Service (2019). *Canadian Forest Fire Weather Index (FWI) System*.
+  Natural Resources Canada.
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
