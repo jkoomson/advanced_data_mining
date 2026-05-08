@@ -1,91 +1,169 @@
-# Wildfire Regime Analysis & Clustering
-**Montesinho Natural Park (Portugal)**
+# Uncovering Hidden Fire Patterns: An Advanced Clustering Analysis of Wildfire Data
 
-## 📌 Project Overview
+## Project Overview
 
-This project analyzes **wildfire behavior and fire regimes** in Montesinho Natural Park using **exploratory data analysis, unsupervised clustering, and spatial visualization** in **R**.
+Wildfires are complex environmental events influenced by the interaction of weather conditions, fuel dryness, wind behavior, and long-term drought accumulation. While traditional wildfire studies often focus on prediction or individual environmental variables, much of the hidden structure in wildfire behavior remains difficult to detect using conventional analysis alone.
 
-The objective is to identify **distinct fire regimes** based on weather conditions, seasonality, burned area, and spatial patterns, and to communicate these findings through **clear, reproducible, publication-quality visualizations**.
+This project applies advanced unsupervised machine learning techniques to uncover latent wildfire patterns using the UCI Forest Fires dataset, which contains 517 wildfire events recorded in Montesinho Natural Park, Portugal.
 
-The final output includes:
-- Fire regime clusters
-- Seasonal patterns by cluster
-- Spatial distribution across the park grid
-- A compact, dashboard-style summary
+The primary objective of this study is to determine whether wildfire events naturally organize themselves into distinct behavioral regimes based on meteorological and fire-weather conditions — without providing the algorithms with predefined labels or categories.
 
----
+To accomplish this, seven clustering algorithms were implemented and compared:
 
-## 📊 Data
+- K-Means
+- Hierarchical Clustering
+- DBSCAN
+- Gaussian Mixture Models (GMM)
+- Spectral Clustering
+- Fuzzy C-Means
+- CLARA
 
-- **517 wildfire events**
-- Key variables:
-  - Fire Weather Index components: `FFMC`, `DMC`, `DC`, `ISI`
-  - Meteorological variables: temperature, relative humidity, wind
-  - Burned area (log-transformed due to heavy right skew)
-  - Temporal variables: month, day of week
-  - Spatial grid coordinates (9×9 park grid)
-
-Preprocessing steps include:
-- Feature scaling and standardization
-- Log transformation of burned area
-- Ordered temporal factors for seasonal analysis
+The analysis includes extensive preprocessing, feature engineering, standardization, dimensionality reduction, cluster validation, spatial visualization, and interpretability analysis.
 
 ---
 
-## 🧠 Methodology
+## Key Features of the Project
 
-### 1️⃣ Exploratory Data Analysis (EDA)
-- Distributional analysis of fire weather variables
-- Temporal trends by month and day of week
-- Identification of extreme fire events
-
-### 2️⃣ Unsupervised Clustering
-- Feature normalization
-- Model-based clustering using **`mclust`**
-- Selection of the optimal number of clusters
-- Interpretation of fire regimes
-
-### 3️⃣ Cluster Profiling
-- Standardized feature profiles by cluster
-- Burned area comparison across fire regimes
-- Cluster size and frequency analysis
-
-### 4️⃣ Spatial Analysis
-- Grid-based aggregation of fire events
-- Dominant fire regime per grid cell
-- Spatial intensity visualization using bubble maps
+### Advanced Unsupervised Learning Framework
+This project demonstrates a comprehensive clustering workflow using seven fundamentally different machine learning algorithms spanning:
+- centroid-based clustering,
+- density-based clustering,
+- probabilistic clustering,
+- graph-based clustering,
+- fuzzy clustering,
+- and robust medoid-based clustering.
 
 ---
 
-## 📈 Key Findings
-
-- **Three distinct fire regimes** were identified:
-  - **Cluster 1**: High-intensity fires under extreme weather conditions
-  - **Cluster 2**: Moderate conditions with frequent small-to-medium fires
-  - **Cluster 3**: Mild conditions with limited spread potential
-- Fire occurrence is **strongly seasonal**, peaking in **August–September**
-- Different fire regimes dominate **different spatial regions** of the park
-- Large fires are rare but disproportionately influential for total burned area
+### Feature Engineering
+Several derived variables were created to better capture wildfire behavior, including:
+- logarithmic burned area transformation,
+- drought load indices,
+- and composite fire danger measures.
 
 ---
 
-## 🧰 Tech Stack
+### Cluster Validation
+Multiple validation techniques were used to determine the optimal number of clusters:
+- Elbow Method
+- Silhouette Analysis
+- Gap Statistic
 
-- **R**
-- **tidyverse** (`dplyr`, `ggplot2`, `tidyr`)
-- **mclust** – model-based clustering
-- **caret** – machine learning workflows
-- **patchwork** – dashboard-style visualization
-- **Quarto / R Markdown** – reproducible reporting
+Internal validation metrics such as:
+- Silhouette Score,
+- Dunn Index,
+- and Calinski–Harabasz Index
 
----
-
-## ⚠️ Reproducibility Notes
-
-- Namespace conflicts (e.g., `dplyr::count()` vs `mclust::count()`) are explicitly handled
-- Code is written to be **Posit Connect–safe**
-- Computationally intensive steps are structured for caching or precomputation
+were also used to evaluate clustering quality across all methods.
 
 ---
 
-## 📂 Repository Structure
+### Spatial and Seasonal Analysis
+The project includes:
+- wildfire spatial mapping,
+- seasonal trend analysis,
+- cluster profile visualization,
+- and interactive geographic exploration of wildfire regimes.
+
+---
+
+## Main Findings
+
+Despite major differences in mathematical assumptions across all seven clustering algorithms, the methods consistently converged toward a stable three-cluster structure.
+
+The discovered wildfire regimes can be interpreted as:
+
+### 1. High-Intensity Drought-Driven Fires (“Summer Infernos”)
+- Extreme drought accumulation
+- High temperatures
+- Low humidity
+- Largest burned areas
+
+### 2. Wind-Driven Rapid Spread Fires
+- High spread potential
+- Elevated wind influence
+- Fast-moving fire conditions
+
+### 3. Mild and Manageable Fires
+- Lower drought stress
+- Lower fire intensity
+- Smaller burned areas
+- More moderate environmental conditions
+
+One of the strongest findings of the study is the dominant role of long-term drought accumulation, captured by the Drought Code (DC), in distinguishing severe wildfire conditions.
+
+---
+
+## Technologies Used
+
+### Programming Language
+- R
+
+### Major Libraries
+- tidyverse
+- cluster
+- factoextra
+- dbscan
+- mclust
+- e1071
+- kernlab
+- dendextend
+- corrplot
+- leaflet
+- patchwork
+- GGally
+- kableExtra
+
+---
+
+## Project Components
+
+The project includes:
+- data preprocessing,
+- exploratory data analysis,
+- feature engineering,
+- clustering implementation,
+- validation analysis,
+- cluster interpretation,
+- spatial visualization,
+- interactive mapping,
+- and comparative algorithm evaluation.
+
+---
+
+## Applications
+
+This work has practical relevance for:
+- wildfire risk assessment,
+- climate analytics,
+- environmental monitoring,
+- disaster preparedness,
+- resource allocation,
+- and catastrophic risk modeling.
+
+The project also demonstrates how unsupervised machine learning can uncover meaningful environmental structures hidden within high-dimensional data.
+
+---
+
+## Dataset Source
+
+Cortez, P. and Morais, A. (2007).  
+*A Data Mining Approach to Predict Forest Fires using Meteorological Data.*  
+University of Minho, Portugal.
+
+UCI Machine Learning Repository:
+https://archive.ics.uci.edu/ml/datasets/forest+fires
+
+---
+
+## Author
+
+John Koomson
+
+Research Interests:
+- Machine Learning
+- Statistical Learning
+- Environmental Risk Analytics
+- Catastrophic Risk Modeling
+- Unsupervised Learning
+- Data Science
